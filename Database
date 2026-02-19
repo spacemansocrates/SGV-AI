@@ -1,0 +1,579 @@
+Database name: sgv
+
+-- SGV Electric Mobility Management System (Updated Schema - Compatible)
+-- Works with MySQL 5.7+/8+ and MariaDB 10.3+
+-- No CHECK constraints (uses triggers instead)
+
+SET NAMES utf8mb4;
+
+-- ------------------------------------------------------------
+-- 1) RBAC: Roles & Users
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS roles (
+  role_id     INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  role_name   VARCHAR(50) NOT NULL UNIQUE,
+  description VARCHAR(255) NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS users (
+  user_id       BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  role_id       INT UNSIGNED NOT NULL,
+  username      VARCHAR(60) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  email         VARCHAR(120) NULL UNIQUE,
+  full_name     VARCHAR(120) NOT NULL,
+  phone         VARCHAR(40) NULL,
+  is_active     TINYINT(1) NOT NULL DEFAULT 1,
+  last_login    DATETIME NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_users_role FOREIGN KEY (role_id)
+    REFERENCES roles(role_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 2) Customers
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS customers (
+  customer_id   BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  name          VARCHAR(150) NOT NULL,
+  phone         VARCHAR(60) NULL,
+  email         VARCHAR(120) NULL,
+  address       VARCHAR(255) NULL,
+  customer_type VARCHAR(30) NOT NULL DEFAULT 'individual',
+  created_by    BIGINT UNSIGNED NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_customers_name (name),
+  CONSTRAINT fk_customers_created_by FOREIGN KEY (created_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 3) Inventory
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS inventory_items (
+  item_id       BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  item_name     VARCHAR(180) NOT NULL,
+  description   TEXT NULL,
+  category      VARCHAR(80) NULL,
+  sku           VARCHAR(80) NULL UNIQUE,
+  barcode       VARCHAR(80) NULL UNIQUE,
+  unit          VARCHAR(30) NULL,
+  unit_cost     DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  selling_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  current_stock DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  reorder_level DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  location      VARCHAR(120) NULL,
+  is_active     TINYINT(1) NOT NULL DEFAULT 1,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_inventory_name (item_name),
+  INDEX idx_inventory_category (category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+  movement_id    BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  item_id        BIGINT UNSIGNED NOT NULL,
+  movement_type  VARCHAR(20) NOT NULL,   -- in/out/adjustment
+  quantity       DECIMAL(12,2) NOT NULL,
+  reference_type VARCHAR(30) NOT NULL,   -- ticket/job_card/requisition/lpo/delivery_note/etc
+  reference_id   BIGINT UNSIGNED NULL,
+  note           VARCHAR(255) NULL,
+  performed_by   BIGINT UNSIGNED NULL,
+  moved_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_stock_mov_item (item_id, moved_at),
+  INDEX idx_stock_mov_ref (reference_type, reference_id),
+  CONSTRAINT fk_stock_mov_item FOREIGN KEY (item_id)
+    REFERENCES inventory_items(item_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_stock_mov_user FOREIGN KEY (performed_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 4) Tickets + Timeline
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tickets (
+  ticket_id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  ticket_no              VARCHAR(30) NOT NULL UNIQUE,
+  customer_id            BIGINT UNSIGNED NOT NULL,
+
+  bike_model             VARCHAR(120) NULL,
+  bike_vin               VARCHAR(120) NULL,
+  bike_mileage           INT UNSIGNED NULL,
+
+  complaint_description  TEXT NOT NULL,
+  warranty_flag          TINYINT(1) NOT NULL DEFAULT 0,
+
+  status                 VARCHAR(40) NOT NULL DEFAULT 'Submitted',
+  current_assignee_role  VARCHAR(50) NULL,
+
+  created_by             BIGINT UNSIGNED NOT NULL,
+  ops_manager_id         BIGINT UNSIGNED NULL,
+  stores_manager_id      BIGINT UNSIGNED NULL,
+
+  created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  INDEX idx_tickets_customer (customer_id),
+  INDEX idx_tickets_status (status),
+  INDEX idx_tickets_created_at (created_at),
+
+  CONSTRAINT fk_tickets_customer FOREIGN KEY (customer_id)
+    REFERENCES customers(customer_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_tickets_created_by FOREIGN KEY (created_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_tickets_ops FOREIGN KEY (ops_manager_id)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_tickets_stores FOREIGN KEY (stores_manager_id)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ticket_timeline (
+  action_id      BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  ticket_id      BIGINT UNSIGNED NOT NULL,
+  actor_user_id  BIGINT UNSIGNED NOT NULL,
+  action_type    VARCHAR(40) NOT NULL,
+  from_status    VARCHAR(40) NULL,
+  to_status      VARCHAR(40) NULL,
+  reason_code    VARCHAR(80) NULL,
+  comment        TEXT NULL,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_timeline_ticket (ticket_id, created_at),
+  CONSTRAINT fk_timeline_ticket FOREIGN KEY (ticket_id)
+    REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_timeline_actor FOREIGN KEY (actor_user_id)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 5) Job Cards
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS job_cards (
+  job_card_id     BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  job_card_no     VARCHAR(30) NOT NULL UNIQUE,
+  ticket_id       BIGINT UNSIGNED NOT NULL UNIQUE,
+
+  assigned_to     BIGINT UNSIGNED NULL,
+  job_status      VARCHAR(40) NOT NULL DEFAULT 'Job Card Created',
+
+  technical_notes TEXT NULL,
+  started_at      DATETIME NULL,
+  completed_at    DATETIME NULL,
+
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  INDEX idx_job_status (job_status),
+
+  CONSTRAINT fk_job_ticket FOREIGN KEY (ticket_id)
+    REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_job_assigned FOREIGN KEY (assigned_to)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 6) Stores Issue Items (either ticket_id OR job_card_id)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS stores_issue_items (
+  issue_item_id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+
+  ticket_id     BIGINT UNSIGNED NULL,
+  job_card_id   BIGINT UNSIGNED NULL,
+
+  item_id       BIGINT UNSIGNED NOT NULL,
+  qty           DECIMAL(12,2) NOT NULL,
+
+  status        VARCHAR(20) NOT NULL DEFAULT 'planned', -- planned/issued
+  issued_by     BIGINT UNSIGNED NULL,
+  issued_at     DATETIME NULL,
+  note          VARCHAR(255) NULL,
+
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  INDEX idx_issue_ticket (ticket_id),
+  INDEX idx_issue_job (job_card_id),
+
+  CONSTRAINT fk_issue_ticket FOREIGN KEY (ticket_id)
+    REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_issue_job FOREIGN KEY (job_card_id)
+    REFERENCES job_cards(job_card_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_issue_item FOREIGN KEY (item_id)
+    REFERENCES inventory_items(item_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_issue_user FOREIGN KEY (issued_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 7) Purchase Requisitions + Items
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS purchase_requisitions (
+  requisition_id      BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  requisition_no      VARCHAR(30) NOT NULL UNIQUE,
+
+  linked_ticket_id    BIGINT UNSIGNED NULL,
+  linked_job_card_id  BIGINT UNSIGNED NULL,
+
+  justification       TEXT NOT NULL,
+  priority            VARCHAR(20) NOT NULL DEFAULT 'normal',
+  status              VARCHAR(30) NOT NULL DEFAULT 'pending', -- pending/approved/rejected/in_procurement/received/closed
+
+  requested_by        BIGINT UNSIGNED NOT NULL,
+  approved_by         BIGINT UNSIGNED NULL,
+
+  approval_comment    TEXT NULL,
+  rejection_reason_code VARCHAR(80) NULL,
+  rejection_comment   TEXT NULL,
+
+  created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  approved_at         DATETIME NULL,
+
+  INDEX idx_pr_status (status),
+  INDEX idx_pr_ticket (linked_ticket_id),
+  INDEX idx_pr_job (linked_job_card_id),
+
+  CONSTRAINT fk_pr_ticket FOREIGN KEY (linked_ticket_id)
+    REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_pr_job FOREIGN KEY (linked_job_card_id)
+    REFERENCES job_cards(job_card_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_pr_requested FOREIGN KEY (requested_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_pr_approved FOREIGN KEY (approved_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS requisition_items (
+  requisition_item_id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  requisition_id      BIGINT UNSIGNED NOT NULL,
+
+  item_id             BIGINT UNSIGNED NULL,
+  item_name_override  VARCHAR(180) NULL,
+
+  specification       VARCHAR(255) NULL,
+  qty                 DECIMAL(12,2) NOT NULL,
+  estimated_unit_cost DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  note                VARCHAR(255) NULL,
+
+  created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  INDEX idx_req_items_req (requisition_id),
+
+  CONSTRAINT fk_req_items_req FOREIGN KEY (requisition_id)
+    REFERENCES purchase_requisitions(requisition_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_req_items_item FOREIGN KEY (item_id)
+    REFERENCES inventory_items(item_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 8) Suppliers
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS suppliers (
+  supplier_id    BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  name           VARCHAR(180) NOT NULL,
+  phone          VARCHAR(60) NULL,
+  email          VARCHAR(120) NULL,
+  address        VARCHAR(255) NULL,
+  payment_terms  VARCHAR(120) NULL,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_supplier_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 9) RFQs + Supplier Quotes
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rfqs (
+  rfq_id         BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  rfq_no         VARCHAR(30) NOT NULL UNIQUE,
+  requisition_id BIGINT UNSIGNED NOT NULL,
+  created_by     BIGINT UNSIGNED NOT NULL,
+  status         VARCHAR(20) NOT NULL DEFAULT 'draft', -- draft/sent/closed/canceled
+  notes          TEXT NULL,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_rfq_req (requisition_id),
+  CONSTRAINT fk_rfq_req FOREIGN KEY (requisition_id)
+    REFERENCES purchase_requisitions(requisition_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_rfq_user FOREIGN KEY (created_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rfq_suppliers (
+  rfq_supplier_id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  rfq_id          BIGINT UNSIGNED NOT NULL,
+  supplier_id     BIGINT UNSIGNED NOT NULL,
+  sent_at         DATETIME NULL,
+  status          VARCHAR(20) NOT NULL DEFAULT 'listed', -- listed/sent/responded/declined
+  UNIQUE KEY uq_rfq_supplier (rfq_id, supplier_id),
+  CONSTRAINT fk_rfq_sup_rfq FOREIGN KEY (rfq_id)
+    REFERENCES rfqs(rfq_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_rfq_sup_supplier FOREIGN KEY (supplier_id)
+    REFERENCES suppliers(supplier_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rfq_quotes (
+  quote_id        BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  rfq_id          BIGINT UNSIGNED NOT NULL,
+  supplier_id     BIGINT UNSIGNED NOT NULL,
+  total_amount    DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  currency        VARCHAR(10) NOT NULL DEFAULT 'MWK',
+  lead_time_days  INT UNSIGNED NULL,
+  validity_date   DATE NULL,
+  terms           TEXT NULL,
+  attachment_path VARCHAR(255) NULL,
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_rfq_quote (rfq_id, supplier_id),
+  CONSTRAINT fk_quote_rfq FOREIGN KEY (rfq_id)
+    REFERENCES rfqs(rfq_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_quote_supplier FOREIGN KEY (supplier_id)
+    REFERENCES suppliers(supplier_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 10) LPOs + Items
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS lpos (
+  lpo_id         BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  lpo_no         VARCHAR(30) NOT NULL UNIQUE,
+  requisition_id BIGINT UNSIGNED NOT NULL,
+  supplier_id    BIGINT UNSIGNED NOT NULL,
+  issued_by      BIGINT UNSIGNED NOT NULL,
+  status         VARCHAR(30) NOT NULL DEFAULT 'issued', -- issued/partially_received/received/canceled
+  issued_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expected_date  DATE NULL,
+  notes          TEXT NULL,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_lpo_supplier (supplier_id),
+  CONSTRAINT fk_lpo_req FOREIGN KEY (requisition_id)
+    REFERENCES purchase_requisitions(requisition_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_lpo_supplier FOREIGN KEY (supplier_id)
+    REFERENCES suppliers(supplier_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_lpo_user FOREIGN KEY (issued_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS lpo_items (
+  lpo_item_id        BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  lpo_id             BIGINT UNSIGNED NOT NULL,
+
+  item_id            BIGINT UNSIGNED NULL,
+  item_name_override VARCHAR(180) NULL,
+
+  specification      VARCHAR(255) NULL,
+  qty_ordered        DECIMAL(12,2) NOT NULL,
+  unit_price         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  qty_received       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  note               VARCHAR(255) NULL,
+
+  INDEX idx_lpo_items_lpo (lpo_id),
+
+  CONSTRAINT fk_lpo_items_lpo FOREIGN KEY (lpo_id)
+    REFERENCES lpos(lpo_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_lpo_items_item FOREIGN KEY (item_id)
+    REFERENCES inventory_items(item_id) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 11) Supplier Delivery Notes (Receiving) + Items
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS supplier_delivery_notes (
+  delivery_note_id      BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  delivery_note_no      VARCHAR(60) NOT NULL,
+  lpo_id                BIGINT UNSIGNED NOT NULL,
+  supplier_id           BIGINT UNSIGNED NOT NULL,
+  received_by           BIGINT UNSIGNED NOT NULL,
+  received_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status                VARCHAR(20) NOT NULL DEFAULT 'received', -- received/partial/rejected
+  attachment_path       VARCHAR(255) NULL,
+  supplier_invoice_no   VARCHAR(60) NULL,
+  supplier_invoice_path VARCHAR(255) NULL,
+  notes                 TEXT NULL,
+  created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_dn (lpo_id, delivery_note_no),
+  CONSTRAINT fk_dn_lpo FOREIGN KEY (lpo_id)
+    REFERENCES lpos(lpo_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_dn_supplier FOREIGN KEY (supplier_id)
+    REFERENCES suppliers(supplier_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_dn_user FOREIGN KEY (received_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS delivery_note_items (
+  delivery_note_item_id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  delivery_note_id      BIGINT UNSIGNED NOT NULL,
+  lpo_item_id           BIGINT UNSIGNED NOT NULL,
+  qty_received_now      DECIMAL(12,2) NOT NULL,
+  note                  VARCHAR(255) NULL,
+  CONSTRAINT fk_dn_items_dn FOREIGN KEY (delivery_note_id)
+    REFERENCES supplier_delivery_notes(delivery_note_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_dn_items_lpo_item FOREIGN KEY (lpo_item_id)
+    REFERENCES lpo_items(lpo_item_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 12) Finance Transactions (Funds release + mandatory receipt enforced by trigger)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS finance_transactions (
+  transaction_id          BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  transaction_no          VARCHAR(30) NOT NULL UNIQUE,
+
+  requisition_id          BIGINT UNSIGNED NULL,
+  lpo_id                  BIGINT UNSIGNED NULL,
+  ticket_id               BIGINT UNSIGNED NULL,
+  job_card_id             BIGINT UNSIGNED NULL,
+
+  amount                  DECIMAL(12,2) NOT NULL,
+  currency                VARCHAR(10) NOT NULL DEFAULT 'MWK',
+
+  payment_method          VARCHAR(30) NOT NULL, -- cash/bank/mobile_money/cheque/other
+  payment_reference       VARCHAR(80) NULL,
+  payee_name              VARCHAR(180) NOT NULL,
+
+  status                  VARCHAR(50) NOT NULL DEFAULT 'released_receipt_pending',
+  -- released_receipt_pending / released_receipt_attached / voided
+
+  receipt_attachment_path VARCHAR(255) NULL,
+  receipt_number          VARCHAR(80) NULL,
+  paid_at                 DATETIME NULL,
+
+  created_by              BIGINT UNSIGNED NOT NULL,
+  created_at              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  INDEX idx_txn_status (status),
+  INDEX idx_txn_req (requisition_id),
+  INDEX idx_txn_lpo (lpo_id),
+  INDEX idx_txn_ticket (ticket_id),
+  INDEX idx_txn_job (job_card_id),
+
+  CONSTRAINT fk_txn_req FOREIGN KEY (requisition_id)
+    REFERENCES purchase_requisitions(requisition_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_txn_lpo FOREIGN KEY (lpo_id)
+    REFERENCES lpos(lpo_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_txn_ticket FOREIGN KEY (ticket_id)
+    REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_txn_job FOREIGN KEY (job_card_id)
+    REFERENCES job_cards(job_card_id) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_txn_user FOREIGN KEY (created_by)
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- 13) Helpful indexes
+-- ------------------------------------------------------------
+CREATE INDEX idx_tickets_assignee_role ON tickets (current_assignee_role, status);
+CREATE INDEX idx_pr_requested_by ON purchase_requisitions (requested_by, status);
+CREATE INDEX idx_job_cards_assigned_to ON job_cards (assigned_to, job_status);
+
+-- ------------------------------------------------------------
+-- 14) TRIGGERS to enforce rules (no CHECK constraints)
+-- ------------------------------------------------------------
+DELIMITER $$
+
+-- stores_issue_items: must link to exactly ONE of (ticket_id, job_card_id)
+CREATE TRIGGER bi_stores_issue_items_ref
+BEFORE INSERT ON stores_issue_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.ticket_id IS NULL AND NEW.job_card_id IS NULL)
+     OR (NEW.ticket_id IS NOT NULL AND NEW.job_card_id IS NOT NULL) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'stores_issue_items must reference exactly one of ticket_id or job_card_id';
+  END IF;
+END$$
+
+CREATE TRIGGER bu_stores_issue_items_ref
+BEFORE UPDATE ON stores_issue_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.ticket_id IS NULL AND NEW.job_card_id IS NULL)
+     OR (NEW.ticket_id IS NOT NULL AND NEW.job_card_id IS NOT NULL) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'stores_issue_items must reference exactly one of ticket_id or job_card_id';
+  END IF;
+END$$
+
+-- requisition_items: either item_id OR item_name_override (not both, not neither)
+CREATE TRIGGER bi_requisition_items_identity
+BEFORE INSERT ON requisition_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.item_id IS NULL AND (NEW.item_name_override IS NULL OR NEW.item_name_override = ''))
+     OR (NEW.item_id IS NOT NULL AND NEW.item_name_override IS NOT NULL AND NEW.item_name_override <> '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'requisition_items must have either item_id OR item_name_override';
+  END IF;
+END$$
+
+CREATE TRIGGER bu_requisition_items_identity
+BEFORE UPDATE ON requisition_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.item_id IS NULL AND (NEW.item_name_override IS NULL OR NEW.item_name_override = ''))
+     OR (NEW.item_id IS NOT NULL AND NEW.item_name_override IS NOT NULL AND NEW.item_name_override <> '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'requisition_items must have either item_id OR item_name_override';
+  END IF;
+END$$
+
+-- lpo_items: either item_id OR item_name_override (same rule)
+CREATE TRIGGER bi_lpo_items_identity
+BEFORE INSERT ON lpo_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.item_id IS NULL AND (NEW.item_name_override IS NULL OR NEW.item_name_override = ''))
+     OR (NEW.item_id IS NOT NULL AND NEW.item_name_override IS NOT NULL AND NEW.item_name_override <> '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'lpo_items must have either item_id OR item_name_override';
+  END IF;
+END$$
+
+CREATE TRIGGER bu_lpo_items_identity
+BEFORE UPDATE ON lpo_items
+FOR EACH ROW
+BEGIN
+  IF (NEW.item_id IS NULL AND (NEW.item_name_override IS NULL OR NEW.item_name_override = ''))
+     OR (NEW.item_id IS NOT NULL AND NEW.item_name_override IS NOT NULL AND NEW.item_name_override <> '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'lpo_items must have either item_id OR item_name_override';
+  END IF;
+END$$
+
+-- finance_transactions: cannot set status to receipt_attached without attachment file
+CREATE TRIGGER bi_finance_txn_receipt_guard
+BEFORE INSERT ON finance_transactions
+FOR EACH ROW
+BEGIN
+  IF NEW.status = 'released_receipt_attached' AND (NEW.receipt_attachment_path IS NULL OR NEW.receipt_attachment_path = '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Cannot mark receipt attached without receipt_attachment_path';
+  END IF;
+END$$
+
+CREATE TRIGGER bu_finance_txn_receipt_guard
+BEFORE UPDATE ON finance_transactions
+FOR EACH ROW
+BEGIN
+  IF NEW.status = 'released_receipt_attached' AND (NEW.receipt_attachment_path IS NULL OR NEW.receipt_attachment_path = '') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Cannot mark receipt attached without receipt_attachment_path';
+  END IF;
+END$$
+
+DELIMITER ;
+
+-- ------------------------------------------------------------
+-- 15) Seed roles (optional)
+-- ------------------------------------------------------------
+INSERT INTO roles (role_name, description) VALUES
+  ('customer_rep', 'Customer Representative'),
+  ('workshop_supervisor', 'Workshop Supervisor / Chief Technician'),
+  ('stores_manager', 'Stores Manager + Procurement'),
+  ('ops_manager', 'Vice Director / Operations Manager'),
+  ('accountant', 'Accounts Manager'),
+  ('admin', 'Admin/Director')
+ON DUPLICATE KEY UPDATE description = VALUES(description);

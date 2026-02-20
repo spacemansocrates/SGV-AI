@@ -1,0 +1,60 @@
+/**
+ * Login page styles. Uses Tailwind for layout; this file holds custom overrides and the left-panel theme.
+ */
+
+/* Left panel brand color and pattern */
+.login-left {
+    background-color: #06392f;
+}
+.login-left::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 30 Q15 0 30 30 T60 30 M30 0 Q45 30 30 60 T30 0' stroke='rgba(255,255,255,0.06)' fill='none' stroke-width='0.8'/%3E%3C/svg%3E");
+    pointer-events: none;
+}
+
+/* Underline-style inputs */
+.login-input {
+    border: none;
+    border-bottom: 1px solid #e5e7eb;
+    background: transparent;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.login-input::placeholder {
+    color: #9ca3af;
+}
+.login-input:focus {
+    border-bottom-color: #06392f;
+}
+
+/* Primary button */
+.login-btn-primary {
+    background-color: #1a1a1a;
+    transition: opacity 0.2s;
+}
+.login-btn-primary:hover {
+    opacity: 0.9;
+}
+
+/* Links in right panel */
+.login-link {
+    color: #06392f;
+    text-decoration: underline;
+    font-weight: 500;
+}
+.login-link:hover {
+    opacity: 0.9;
+}
+
+/* Google button (if enabled later) */
+.login-btn-google {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.login-btn-google:hover {
+    background-color: #f9fafb;
+}

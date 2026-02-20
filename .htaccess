@@ -1,0 +1,7 @@
+# Assets live in public/assets; everything else is served from root.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Send assets to public/assets
+    RewriteRule ^assets/(.*)$ public/assets/$1 [L]
+</IfModule>

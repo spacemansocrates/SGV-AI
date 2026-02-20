@@ -1,4 +1,4 @@
-Database name: sgv
+-- Database name: sgv
 
 -- SGV Electric Mobility Management System (Updated Schema - Compatible)
 -- Works with MySQL 5.7+/8+ and MariaDB 10.3+
@@ -98,28 +98,21 @@ CREATE TABLE IF NOT EXISTS tickets (
   ticket_id              BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   ticket_no              VARCHAR(30) NOT NULL UNIQUE,
   customer_id            BIGINT UNSIGNED NOT NULL,
-
   bike_model             VARCHAR(120) NULL,
   bike_vin               VARCHAR(120) NULL,
   bike_mileage           INT UNSIGNED NULL,
-
   complaint_description  TEXT NOT NULL,
   warranty_flag          TINYINT(1) NOT NULL DEFAULT 0,
-
   status                 VARCHAR(40) NOT NULL DEFAULT 'Submitted',
   current_assignee_role  VARCHAR(50) NULL,
-
   created_by             BIGINT UNSIGNED NOT NULL,
   ops_manager_id         BIGINT UNSIGNED NULL,
   stores_manager_id      BIGINT UNSIGNED NULL,
-
   created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
   INDEX idx_tickets_customer (customer_id),
   INDEX idx_tickets_status (status),
   INDEX idx_tickets_created_at (created_at),
-
   CONSTRAINT fk_tickets_customer FOREIGN KEY (customer_id)
     REFERENCES customers(customer_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_tickets_created_by FOREIGN KEY (created_by)
@@ -154,19 +147,14 @@ CREATE TABLE IF NOT EXISTS job_cards (
   job_card_id     BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   job_card_no     VARCHAR(30) NOT NULL UNIQUE,
   ticket_id       BIGINT UNSIGNED NOT NULL UNIQUE,
-
   assigned_to     BIGINT UNSIGNED NULL,
   job_status      VARCHAR(40) NOT NULL DEFAULT 'Job Card Created',
-
   technical_notes TEXT NULL,
   started_at      DATETIME NULL,
   completed_at    DATETIME NULL,
-
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
   INDEX idx_job_status (job_status),
-
   CONSTRAINT fk_job_ticket FOREIGN KEY (ticket_id)
     REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_job_assigned FOREIGN KEY (assigned_to)
@@ -178,24 +166,18 @@ CREATE TABLE IF NOT EXISTS job_cards (
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS stores_issue_items (
   issue_item_id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
-
   ticket_id     BIGINT UNSIGNED NULL,
   job_card_id   BIGINT UNSIGNED NULL,
-
   item_id       BIGINT UNSIGNED NOT NULL,
   qty           DECIMAL(12,2) NOT NULL,
-
   status        VARCHAR(20) NOT NULL DEFAULT 'planned', -- planned/issued
   issued_by     BIGINT UNSIGNED NULL,
   issued_at     DATETIME NULL,
   note          VARCHAR(255) NULL,
-
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
   INDEX idx_issue_ticket (ticket_id),
   INDEX idx_issue_job (job_card_id),
-
   CONSTRAINT fk_issue_ticket FOREIGN KEY (ticket_id)
     REFERENCES tickets(ticket_id) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_issue_job FOREIGN KEY (job_card_id)

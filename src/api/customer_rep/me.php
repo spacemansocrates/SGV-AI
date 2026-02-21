@@ -4,4 +4,4 @@
  */
 require_once __DIR__ . '/../../core/helpers.php';
 auth_require_role(['customer_rep', 'workshop_supervisor', 'stores_manager', 'ops_manager', 'accountant']);
-json_response(['role' => $_SESSION['role_name'], 'user_id' => $_SESSION['user_id']]);
+return api_return(['role' => $_SESSION['role_name'], 'user_id' => $_SESSION['user_id']]);

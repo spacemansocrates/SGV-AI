@@ -31,20 +31,21 @@ if (!auth_check()) {
 }
 
 $role = $_SESSION['role_name'];
-$dashboards = [
+$routes = [
     'admin' => 'admin.php',
     'customer_rep' => 'customer_rep.php',
     'workshop_supervisor' => 'workshop_supervisor.php',
     'stores_manager' => 'stores_manager.php',
     'ops_manager' => 'ops_manager.php',
     'accountant' => 'accountant.php',
+    'customer' => 'customer.php',
 ];
 
 $requested = isset($_GET['dashboard']) ? trim($_GET['dashboard']) : '';
-if ($requested === '' || !isset($dashboards[$requested]) || $requested !== $role) {
+if ($requested === '' || !isset($routes[$requested]) || $requested !== $role) {
     header('Location: index.php?dashboard=' . rawurlencode($role));
     exit;
 }
 
-$file = $dashboards[$requested];
-require __DIR__ . '/src/dashboards/' . $file;
+$file = $routes[$requested];
+require __DIR__ . '/src/routes/' . $file;

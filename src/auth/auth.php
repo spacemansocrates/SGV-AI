@@ -26,9 +26,12 @@ function auth_login($username, $password) {
     $_SESSION['user_id'] = $userId;
     $_SESSION['role_name'] = $roleName;
     $pdo->prepare('UPDATE users SET last_login = NOW() WHERE user_id = ?')->execute([$userId]);
-    $stmt = $pdo->prepare('SELECT u.user_id, u.username, u.email, u.full_name, u.phone, u.is_active, u.last_login, u.created_at, u.updated_at, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT u.user_id, u.customer_id, u.username, u.email, u.full_name, u.phone, u.is_active, u.last_login, u.created_at, u.updated_at, r.role_name FROM users u JOIN roles r ON u.role_id = r.role_id WHERE u.user_id = ? LIMIT 1');
     $stmt->execute([$userId]);
     $_SESSION['user'] = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($_SESSION['role_name'] === 'customer' && !empty($_SESSION['user']['customer_id'])) {
+        $_SESSION['customer_id'] = (int) $_SESSION['user']['customer_id'];
+    }
     return true;
 }
 
@@ -52,9 +55,16 @@ function auth_check() {
 
 /**
  * Redirect to index (login page) if not logged in.
+ * When called from API (GET api=1), returns JSON 401 instead of redirect.
  */
 function auth_require() {
     if (!auth_check()) {
+        if (!empty($_GET['api']) && $_GET['api'] === '1') {
+            http_response_code(401);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['error' => 'Not logged in']);
+            exit;
+        }
         header('Location: index.php');
         exit;
     }
@@ -62,10 +72,17 @@ function auth_require() {
 
 /**
  * Require one of the given roles; 403 otherwise.
+ * When called from API (GET api=1), returns JSON 403 instead of plain text.
  */
 function auth_require_role($allowedRoles) {
     auth_require();
     if (!in_array($_SESSION['role_name'], $allowedRoles, true)) {
+        if (!empty($_GET['api']) && $_GET['api'] === '1') {
+            http_response_code(403);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['error' => 'Forbidden']);
+            exit;
+        }
         http_response_code(403);
         echo 'Forbidden';
         exit;

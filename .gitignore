@@ -1,0 +1,34 @@
+# Project docs and API collections (optional: remove to track them)
+docs/
+postman/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# PHP
+vendor/
+composer.lock
+*.log
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Uploads and generated files (if any)
+uploads/
+storage/
+cache/
+tmp/
+temp/
+
+# Optional: uncomment if you add Node/frontend build
+# node_modules/
+# npm-debug.log
+# dist/
+# build/
